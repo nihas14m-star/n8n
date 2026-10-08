@@ -13,7 +13,7 @@ export interface TeamsSetupStepReport {
 	step: Step;
 	/** `manual` is the rung taken when the account reaches no subscription. */
 	botRoute?: 'provisioned' | 'manual';
-	installRoute?: 'upload';
+	installRoute?: 'published' | 'submitted' | 'upload';
 }
 
 /**
