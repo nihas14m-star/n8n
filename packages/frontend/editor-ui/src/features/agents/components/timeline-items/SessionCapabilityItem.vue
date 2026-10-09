@@ -10,6 +10,7 @@ import {
 	N8nCallout,
 	N8nCodeBlock,
 	N8nIcon,
+	N8nSpinner,
 	N8nText,
 	N8nTooltip,
 } from '@n8n/design-system';
@@ -31,12 +32,12 @@ const props = defineProps<{
 const i18n = useI18n();
 const nodeTypesStore = useNodeTypesStore();
 
-const nodeType = computed(function getNodeType() {
+const nodeType = computed(() => {
 	if (props.item.kind !== 'node' || !props.item.nodeType) return null;
 	return nodeTypesStore.getNodeType(props.item.nodeType, props.item.nodeTypeVersion) ?? null;
 });
 
-const label = computed(function getLabel(): string {
+const label = computed((): string => {
 	if (props.item.kind === 'skill') {
 		return (
 			props.item.skillName ??
@@ -52,16 +53,29 @@ const label = computed(function getLabel(): string {
 	return resolveToolNameForDisplay(props.item.toolName, i18n, props.item.toolOutput);
 });
 
-const error = computed(function getError(): string | undefined {
-	if (props.item.toolOutcome !== 'error' && props.item.toolSuccess !== false) return undefined;
+const isRunning = computed(() => props.item.activityStatus === 'running');
+
+const isInterrupted = computed(() => props.item.activityStatus === 'interrupted');
+
+const canExpand = computed(() => !isRunning.value && !isInterrupted.value);
+
+const error = computed((): string | undefined => {
+	if (props.item.activityStatus === 'waiting' || isRunning.value || isInterrupted.value) {
+		return undefined;
+	}
+	if (
+		props.item.activityStatus !== 'failed' &&
+		props.item.toolOutcome !== 'error' &&
+		props.item.toolSuccess !== false
+	) {
+		return undefined;
+	}
 	return timelineItemErrorMessage(props.item) || i18n.baseText('agentSessions.timeline.toolError');
 });
 
-const errorTooltip = computed(function getErrorTooltip(): string {
-	return error.value ? truncate(error.value, 160) : '';
-});
+const errorTooltip = computed(() => (error.value ? truncate(error.value, 160) : ''));
 
-const time = computed(function getTime(): string {
+const time = computed((): string => {
 	if (!props.item.timestamp) return '';
 	return convertToDisplayDate(new Date(props.item.timestamp).toISOString()).time;
 });
@@ -79,7 +93,7 @@ function stringifyJson(value: unknown): string {
 
 const isOpen = ref(false);
 
-const searchableText = computed(function getSearchableText(): string {
+const searchableText = computed((): string => {
 	return [
 		label.value,
 		props.item.toolInput !== undefined ? stringifyJson(props.item.toolInput) : '',
@@ -90,8 +104,12 @@ const searchableText = computed(function getSearchableText(): string {
 });
 
 watch(
-	() => props.searchQuery,
-	function onSearchQueryChange(query) {
+	[() => props.searchQuery, canExpand],
+	function onSearchQueryChange([query, expandable]) {
+		if (!expandable) {
+			isOpen.value = false;
+			return;
+		}
 		const normalized = query?.trim().toLowerCase();
 		if (normalized) {
 			if (searchableText.value.includes(normalized)) {
@@ -106,32 +124,51 @@ watch(
 </script>
 
 <template>
-	<div data-test-id="session-capability-item" :class="$style.step">
-		<CollapsibleRoot :open="isOpen" @update:open="isOpen = $event" v-slot="{ open: isExpanded }">
+	<div
+		data-test-id="session-capability-item"
+		:data-status="item.activityStatus"
+		:class="[$style.step, { [$style.failed]: error, [$style.interrupted]: isInterrupted }]"
+	>
+		<CollapsibleRoot
+			:open="canExpand && isOpen"
+			:disabled="!canExpand"
+			@update:open="isOpen = canExpand && $event"
+		>
 			<div :class="$style.header">
 				<CollapsibleTrigger as-child>
-					<N8nAiActivityStepButton size="small">
+					<N8nAiActivityStepButton
+						size="small"
+						:loading="isRunning"
+						:interactive="canExpand"
+						:tabindex="canExpand ? undefined : -1"
+						:aria-disabled="!canExpand || undefined"
+					>
 						<template #prefix>
-							<span v-if="nodeType" :class="$style.nodeIcon">
-								<NodeIcon :node-type="nodeType" :size="20" />
+							<span :class="$style.iconContainer">
+								<N8nSpinner v-if="isRunning" type="grid" size="medium" />
+								<N8nIcon
+									v-else-if="isInterrupted"
+									icon="circle-x"
+									size="medium"
+									:class="$style.interruptedIcon"
+								/>
+								<N8nTooltip v-else-if="error" placement="top">
+									<template #content>{{ errorTooltip }}</template>
+									<N8nIcon icon="circle-alert" color="danger" size="medium" />
+								</N8nTooltip>
+								<NodeIcon v-else-if="nodeType" :node-type="nodeType" :size="20" />
+								<SessionTimelinePill v-else :kind="item.kind" />
 							</span>
-							<SessionTimelinePill v-else :kind="item.kind" />
 						</template>
 						{{ label }}
-						<template #icon>
-							<N8nTooltip v-if="error" placement="top">
-								<template #content>{{ errorTooltip }}</template>
-								<N8nIcon icon="triangle-alert" color="danger" size="small" />
-							</N8nTooltip>
-						</template>
-						<template #suffix>
+						<template v-if="canExpand" #suffix>
 							<N8nAiActivityStepChevron :open="isOpen" />
 						</template>
 					</N8nAiActivityStepButton>
 				</CollapsibleTrigger>
 				<N8nText step="xs" color="text-light" bold>{{ time }}</N8nText>
 			</div>
-			<N8nAnimatedCollapsibleContent>
+			<N8nAnimatedCollapsibleContent v-if="canExpand">
 				<div :class="$style.content">
 					<N8nAiActivityStepResultSection
 						v-if="item.toolInput !== undefined"
@@ -175,7 +212,23 @@ watch(
 	--ai-activity-step--color: var(--text-color--subtle);
 }
 
-.nodeIcon {
+.failed {
+	--ai-activity-step--color: var(--color--text--danger);
+}
+
+.interrupted {
+	--ai-activity-step--color: var(--text-color--disabled);
+
+	button:hover {
+		color: var(--text-color--disabled);
+	}
+}
+
+.interruptedIcon {
+	color: var(--icon-color--subtle);
+}
+
+.iconContainer {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
@@ -190,6 +243,10 @@ watch(
 	align-items: center;
 	justify-content: space-between;
 	gap: var(--spacing--sm);
+
+	> button:disabled {
+		pointer-events: none;
+	}
 }
 
 .content {

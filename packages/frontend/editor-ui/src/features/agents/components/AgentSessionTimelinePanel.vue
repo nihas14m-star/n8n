@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import type { PushMessage } from '@n8n/api-types';
+import type { AgentJsonConfig, PushMessage } from '@n8n/api-types';
 import { useToast } from '@n8n/composables/useToast';
 import { usePushConnectionStore } from '@/app/stores/pushConnection.store';
 import { useAgentSessionsStore } from '@/features/agents/agentSessions.store';
@@ -9,6 +9,7 @@ import type {
 } from '@/features/agents/composables/useAgentThreadsApi';
 import SessionEventFilter from '@/features/agents/components/SessionEventFilter.vue';
 import SessionTimelineTable from '@/features/agents/components/SessionTimelineTable.vue';
+import SessionTimelineTestControls from './SessionTimelineTestControls.vue';
 import {
 	flattenExecutionsToTimelineItems,
 	computeIdleRanges,
@@ -34,7 +35,9 @@ import { useKeybindings } from '@/app/composables/useKeybindings';
 const props = defineProps<{
 	projectId: string;
 	agentId: string;
+	agentName?: string;
 	threadId: string;
+	personalisation?: AgentJsonConfig['personalisation'] | null;
 }>();
 
 // Hands the loaded thread detail up so an enclosing view (the standalone
@@ -63,9 +66,20 @@ let refreshPending = false;
 let removePushListener: (() => void) | undefined;
 let activeRequest: { identity: string; promise: Promise<void> } | undefined;
 
-const baseItems = computed<TimelineItem[]>(() =>
-	flattenExecutionsToTimelineItems(executions.value),
+/** Temporary test integration. Remove this block, the import, and the controls tag after testing. */
+const isDevelopment = import.meta.env.DEV;
+const testItems = ref<TimelineItem[] | null>(null);
+const isTimelineLoading = computed(() => loading.value && testItems.value === null);
+
+const baseItems = computed<TimelineItem[]>(
+	() => testItems.value ?? flattenExecutionsToTimelineItems(executions.value),
 );
+
+watch(testItems, () => {
+	selectedFilters.value = new Set();
+	searchQuery.value = '';
+	selectTimelineItem(null);
+});
 
 // Resolve sub-agent ids to friendly names, loaded lazily and only when the
 // session actually contains delegations (mirrors how the chat resolves the
@@ -307,7 +321,8 @@ useKeybindings({
 
 <template>
 	<div :class="$style.panel">
-		<div v-if="!loading" :class="$style.subHeader">
+		<SessionTimelineTestControls v-if="isDevelopment" @update="testItems = $event" />
+		<div v-if="!isTimelineLoading" :class="$style.subHeader">
 			<N8nInput
 				ref="searchInput"
 				v-model="searchQuery"
@@ -329,12 +344,14 @@ useKeybindings({
 		</div>
 
 		<div :class="$style.section">
-			<div v-if="loading" :class="$style.loading">
+			<div v-if="isTimelineLoading" :class="$style.loading">
 				{{ i18n.baseText('generic.loadingEllipsis') }}
 			</div>
 			<SessionTimelineTable
 				v-else
 				:items="items"
+				:agent-name="props.agentName"
+				:personalisation="props.personalisation"
 				:idle-ranges="idleRanges"
 				:selected-index="highlightedIndex"
 				:visible-kinds="selectedFilters"

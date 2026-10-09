@@ -1,5 +1,6 @@
 <script lang="ts" setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import type { AgentJsonConfig } from '@n8n/api-types';
 import { useI18n } from '@n8n/i18n';
 import { N8nRecycleScroller } from '@n8n/design-system';
 import SessionTimelineRow from './SessionTimelineRow.vue';
@@ -12,6 +13,8 @@ const VIRTUALIZE_AFTER_ROWS = 100;
 
 const props = defineProps<{
 	items: TimelineItem[];
+	agentName?: string;
+	personalisation?: AgentJsonConfig['personalisation'] | null;
 	selectedIndex: number | null;
 	visibleKinds: Set<string>;
 	searchQuery?: string;
@@ -175,8 +178,10 @@ onBeforeUnmount(() => {
 				>
 					<SessionTimelineRow
 						:item="row.item"
+						:agent-name="props.agentName"
 						:selected="props.selectedIndex === row.index"
 						:search-query="props.searchQuery"
+						:personalisation="props.personalisation"
 					/>
 					<div v-if="rowIndex < rows.length - 1" :class="$style.divider"><span></span></div>
 				</div>
@@ -212,8 +217,10 @@ onBeforeUnmount(() => {
 				>
 					<SessionTimelineRow
 						:item="row.item"
+						:agent-name="props.agentName"
 						:selected="props.selectedIndex === row.index"
 						:search-query="props.searchQuery"
+						:personalisation="props.personalisation"
 					/>
 					<div v-if="rowIndex < rows.length - 1" :class="$style.divider"><span></span></div>
 				</div>
@@ -243,6 +250,7 @@ onBeforeUnmount(() => {
 	flex-direction: column;
 	width: 100%;
 	height: 100%;
+	padding-block-end: var(--spacing--lg);
 }
 
 .rowWrapper {

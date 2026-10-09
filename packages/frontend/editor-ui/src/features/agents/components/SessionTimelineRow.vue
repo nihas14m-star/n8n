@@ -1,4 +1,5 @@
 <script lang="ts" setup>
+import type { AgentJsonConfig } from '@n8n/api-types';
 import { useI18n } from '@n8n/i18n';
 import type { Component } from 'vue';
 import { computed } from 'vue';
@@ -13,6 +14,8 @@ const props = defineProps<{
 	item: TimelineItem;
 	selected: boolean;
 	searchQuery?: string;
+	agentName?: string;
+	personalisation?: AgentJsonConfig['personalisation'] | null;
 }>();
 
 const i18n = useI18n();
@@ -45,12 +48,13 @@ const timelineItemProps = computed(function getTimelineItemProps() {
 		const fallbackSenderName =
 			kind === 'user'
 				? i18n.baseText('agentSessions.timeline.user')
-				: i18n.baseText('agentSessions.timeline.agent');
+				: (props.agentName ?? i18n.baseText('agentSessions.timeline.agent'));
 
 		return {
 			...baseProps,
 			senderName: props.item.authorName ?? fallbackSenderName,
 			messageMarkdown: props.item.content ?? '',
+			personalisation: props.personalisation,
 		};
 	}
 
