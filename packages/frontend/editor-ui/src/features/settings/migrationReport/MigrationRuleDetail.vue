@@ -177,6 +177,33 @@ const openCount = computed(
 		).length,
 );
 
+// An open finding on a workflow that has not run for 12 months is likely safe to skip.
+// A workflow that never ran is not counted, because it can be new.
+const STALE_THRESHOLD_MS = 365 * 24 * 60 * 60 * 1000;
+
+const staleOpenWorkflows = computed(() =>
+	state.value.affectedWorkflows.filter(
+		(workflow) =>
+			workflow.status === 'open' &&
+			!migratedWorkflowIds.value.has(workflow.id) &&
+			workflow.lastExecutedAt !== undefined &&
+			Date.now() - new Date(workflow.lastExecutedAt).getTime() > STALE_THRESHOLD_MS,
+	),
+);
+
+// Oldest runs first, so the stale workflows are at the top of the table.
+function reviewStaleWorkflows() {
+	sortBy.value = [{ id: 'lastExecutedAt', desc: false }];
+}
+
+async function markStaleWorkflowsAsWontFix() {
+	await Promise.all(
+		staleOpenWorkflows.value.map(
+			async (workflow) => await onFindingStatusChange(workflow, 'wont_fix'),
+		),
+	);
+}
+
 // Rows with a state change in flight. One change at a time keeps the revert correct.
 const savingWorkflowIds = ref<Set<string>>(new Set());
 
@@ -368,6 +395,42 @@ const sortedWorkflows = computed(() => {
 			</template>
 		</header>
 
+		<div
+			v-if="!isLoading && canMigrate && staleOpenWorkflows.length > 0"
+			:class="$style.staleCallout"
+			data-test-id="migration-rule-stale-callout"
+		>
+			<N8nText color="text-dark">
+				{{
+					i18n.baseText('settings.migrationReport.detail.staleCallout.message', {
+						adjustToNumber: staleOpenWorkflows.length,
+						interpolate: { count: String(staleOpenWorkflows.length) },
+					})
+				}}
+			</N8nText>
+			<div :class="$style.staleCalloutActions">
+				<N8nButton
+					variant="ghost"
+					size="small"
+					data-test-id="migration-rule-stale-review"
+					@click="reviewStaleWorkflows"
+				>
+					{{ i18n.baseText('settings.migrationReport.detail.staleCallout.review') }}
+				</N8nButton>
+				<N8nButton
+					size="small"
+					data-test-id="migration-rule-stale-mark-all"
+					@click="markStaleWorkflowsAsWontFix"
+				>
+					{{
+						i18n.baseText('settings.migrationReport.detail.staleCallout.markAll', {
+							interpolate: { count: String(staleOpenWorkflows.length) },
+						})
+					}}
+				</N8nButton>
+			</div>
+		</div>
+
 		<!-- Search and Filter Controls -->
 		<div :class="$style.filterControls">
 			<N8nInput
@@ -481,6 +544,24 @@ const sortedWorkflows = computed(() => {
 	width: 100%;
 	max-width: var(--settings-content--max-width, 45rem);
 	margin-inline: auto;
+}
+
+.staleCallout {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--spacing--sm);
+	padding: var(--spacing--sm) var(--spacing--md);
+	margin-bottom: var(--spacing--md);
+	border: var(--border);
+	border-radius: var(--radius--lg);
+	background-color: var(--color--background--light-3);
+}
+
+.staleCalloutActions {
+	display: flex;
+	flex-shrink: 0;
+	gap: var(--spacing--2xs);
 }
 
 .clickableRow {

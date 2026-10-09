@@ -379,6 +379,119 @@ describe('MigrationRuleDetail', () => {
 		});
 	});
 
+	describe('stale workflows callout', () => {
+		const DAY_MS = 24 * 60 * 60 * 1000;
+		const staleWorkflow = {
+			...mockWorkflowWithIssue,
+			lastExecutedAt: new Date(Date.now() - 400 * DAY_MS),
+		};
+		const recentWorkflow = {
+			...mockWorkflowWithMultipleNodes,
+			lastExecutedAt: new Date(Date.now() - DAY_MS),
+		};
+
+		it('should count the open workflows that have not run in over 12 months', async () => {
+			vi.mocked(breakingChangesApi.getReportForRule).mockResolvedValue(
+				createMockRuleResult({
+					affectedWorkflows: [
+						staleWorkflow,
+						{ ...staleWorkflow, id: 'workflow-3', name: 'Test Workflow 3' },
+						{ ...staleWorkflow, id: 'workflow-4', name: 'Test Workflow 4', status: 'wont_fix' },
+						recentWorkflow,
+						{ ...mockWorkflowWithMultipleNodes, id: 'workflow-5', name: 'Never ran' },
+					],
+				}),
+			);
+			renderComponent({ props: { migrationRuleId: 'rule-1' } });
+
+			const callout = await screen.findByTestId('migration-rule-stale-callout');
+			expect(callout).toHaveTextContent(
+				'2 workflows haven\'t run in over 12 months. Mark them as "Won\'t fix" to keep them out of the way.',
+			);
+			expect(within(callout).getByTestId('migration-rule-stale-mark-all')).toHaveTextContent(
+				'Mark all 2',
+			);
+		});
+
+		it('should not show the callout when no open workflow is stale', async () => {
+			vi.mocked(breakingChangesApi.getReportForRule).mockResolvedValue(
+				createMockRuleResult({
+					affectedWorkflows: [{ ...staleWorkflow, status: 'wont_fix' }, recentWorkflow],
+				}),
+			);
+			renderComponent({ props: { migrationRuleId: 'rule-1' } });
+			await screen.findByText('1 affected');
+
+			expect(screen.queryByTestId('migration-rule-stale-callout')).not.toBeInTheDocument();
+		});
+
+		it('should not show the callout when the user cannot change states', async () => {
+			rbacStore.hasScope.mockReturnValue(false);
+			vi.mocked(breakingChangesApi.getReportForRule).mockResolvedValue(
+				createMockRuleResult({ affectedWorkflows: [staleWorkflow] }),
+			);
+			renderComponent({ props: { migrationRuleId: 'rule-1' } });
+			await screen.findByText('1 affected');
+
+			expect(screen.queryByTestId('migration-rule-stale-callout')).not.toBeInTheDocument();
+		});
+
+		it("should mark every stale workflow as won't fix and hide the callout", async () => {
+			vi.mocked(breakingChangesApi.updateFindingStatus).mockResolvedValue();
+			vi.mocked(breakingChangesApi.getReportForRule).mockResolvedValue(
+				createMockRuleResult({
+					affectedWorkflows: [
+						staleWorkflow,
+						{ ...staleWorkflow, id: 'workflow-3', name: 'Test Workflow 3' },
+						recentWorkflow,
+					],
+				}),
+			);
+			renderComponent({ props: { migrationRuleId: 'rule-1' } });
+
+			await userEvent.click(await screen.findByTestId('migration-rule-stale-mark-all'));
+
+			await waitFor(() => {
+				expect(screen.queryByTestId('migration-rule-stale-callout')).not.toBeInTheDocument();
+				expect(screen.getByText('1 affected')).toBeInTheDocument();
+			});
+			expect(breakingChangesApi.updateFindingStatus).toHaveBeenCalledTimes(2);
+			expect(breakingChangesApi.updateFindingStatus).toHaveBeenCalledWith(
+				rootStore.restApiContext,
+				'rule-1',
+				'workflow-1',
+				'wont_fix',
+			);
+			expect(breakingChangesApi.updateFindingStatus).toHaveBeenCalledWith(
+				rootStore.restApiContext,
+				'rule-1',
+				'workflow-3',
+				'wont_fix',
+			);
+		});
+
+		it('should sort the oldest runs first on review', async () => {
+			vi.mocked(breakingChangesApi.getReportForRule).mockResolvedValue(
+				createMockRuleResult({
+					affectedWorkflows: [
+						{ ...recentWorkflow, numberOfExecutions: 500 },
+						{ ...staleWorkflow, numberOfExecutions: 10 },
+					],
+				}),
+			);
+			renderComponent({ props: { migrationRuleId: 'rule-1' } });
+			await waitFor(() => {
+				expect(screen.getAllByRole('row')[1].textContent).toContain('Test Workflow 2');
+			});
+
+			await userEvent.click(screen.getByTestId('migration-rule-stale-review'));
+
+			await waitFor(() => {
+				expect(screen.getAllByRole('row')[1].textContent).toContain('Test Workflow 1');
+			});
+		});
+	});
+
 	describe('migration', () => {
 		it('should not render a Migrate button when the rule is not migratable', async () => {
 			vi.mocked(breakingChangesApi.getReportForRule).mockResolvedValue(mockRuleResult);
