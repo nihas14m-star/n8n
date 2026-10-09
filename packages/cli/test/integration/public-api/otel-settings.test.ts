@@ -21,6 +21,8 @@ const validSettings = {
 	tracesSampleRate: 0.5,
 	startupConnectivityTimeoutMs: 3_000,
 	includeNodeSpans: false,
+	emitWorkflowStartSpan: true,
+	emitNodeStartSpan: true,
 	injectOutbound: false,
 	productionExecutionsOnly: false,
 };
@@ -101,6 +103,8 @@ describe('OpenTelemetry settings in Public API', () => {
 					'tracesSampleRate',
 					'startupConnectivityTimeoutMs',
 					'includeNodeSpans',
+					'emitWorkflowStartSpan',
+					'emitNodeStartSpan',
 					'injectOutbound',
 					'productionExecutionsOnly',
 				].sort(),
@@ -246,6 +250,24 @@ describe('OpenTelemetry settings in Public API', () => {
 
 			expect(replaced.status).toBe(200);
 			expect(replaced.body.exporterProtocol).toBe('http/protobuf');
+		});
+
+		it('keeps the stored start span flags when a body omits them', async () => {
+			await testServer.publicApiAgentFor(owner).put('/settings/otel').send(validSettings);
+
+			const {
+				emitWorkflowStartSpan: _workflow,
+				emitNodeStartSpan: _node,
+				...bodyWithoutFlags
+			} = validSettings;
+			const response = await testServer
+				.publicApiAgentFor(owner)
+				.put('/settings/otel')
+				.send(bodyWithoutFlags);
+
+			expect(response.status).toBe(200);
+			expect(response.body.emitWorkflowStartSpan).toBe(true);
+			expect(response.body.emitNodeStartSpan).toBe(true);
 		});
 
 		it('stores the exporter endpoint without surrounding whitespace', async () => {
@@ -409,6 +431,42 @@ describe('OpenTelemetry settings in Public API', () => {
 				.send(getResponse.body);
 
 			expect(putResponse.status).toBe(200);
+		});
+	});
+
+	describe('PUT /settings/otel with an env-managed start span flag', () => {
+		beforeEach(async () => {
+			process.env[OTEL_ENV_VARS.emitNodeStartSpan] = 'true';
+			Container.get(OtelConfig).emitNodeStartSpan = true;
+			await Container.get(OtelSettingsService).loadSettings();
+		});
+
+		afterEach(async () => {
+			delete process.env[OTEL_ENV_VARS.emitNodeStartSpan];
+			Container.get(OtelConfig).emitNodeStartSpan = false;
+			await Container.get(OtelSettingsService).loadSettings();
+		});
+
+		it('accepts a body that omits the env-managed flag', async () => {
+			const { emitNodeStartSpan: _omitted, ...bodyWithoutFlag } = validSettings;
+
+			const response = await testServer
+				.publicApiAgentFor(owner)
+				.put('/settings/otel')
+				.send(bodyWithoutFlag);
+
+			expect(response.status).toBe(200);
+			expect(response.body.emitNodeStartSpan).toBe(true);
+		});
+
+		it('rejects changing the env-managed flag with 409', async () => {
+			const response = await testServer
+				.publicApiAgentFor(owner)
+				.put('/settings/otel')
+				.send({ ...validSettings, emitNodeStartSpan: false });
+
+			expect(response.status).toBe(409);
+			expect(response.body.message).toContain('emitNodeStartSpan');
 		});
 	});
 

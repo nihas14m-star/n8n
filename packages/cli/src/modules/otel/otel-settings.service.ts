@@ -13,6 +13,11 @@ export type OtelSettingsResponse = OtelConfig & {
 	envManagedFields: Array<keyof OtelConfig>;
 };
 
+type OptionalOtelSettingsKey = 'emitWorkflowStartSpan' | 'emitNodeStartSpan';
+
+export type OtelSettingsUpdate = Omit<OtelConfig, OptionalOtelSettingsKey> &
+	Partial<Pick<OtelConfig, OptionalOtelSettingsKey>>;
+
 export type OtelConnectionParams = Pick<
 	OtelConfig,
 	| 'exporterProtocol'
@@ -95,14 +100,16 @@ export class OtelSettingsService {
 		}
 	}
 
-	async saveSettings(incoming: OtelConfig): Promise<void> {
+	async saveSettings(incoming: OtelSettingsUpdate): Promise<void> {
 		const existing = await this.settingsRepository.findByKey(OTEL_SETTINGS_KEY);
 		const persisted = this.parsePersisted(existing?.value);
 		// Env-var fields always win — override any frontend-submitted values with
 		// the canonical env-var value so the DB stays consistent even if a client
-		// sends a stale or tampered payload.
+		// sends a stale or tampered payload. An omitted field keeps its stored value.
 		const sanitized = this.buildConfig((key) =>
-			this.isEnvManaged(key) ? this.config[key] : incoming[key],
+			this.isEnvManaged(key)
+				? this.config[key]
+				: (incoming[key] ?? persisted?.[key] ?? this.config[key]),
 		);
 		// Blanked values echoed back by a client mean "keep the stored value"
 		if (!this.isEnvManaged('exporterHeaders')) {
@@ -207,6 +214,8 @@ export class OtelSettingsService {
 			tracesSampleRate: pick('tracesSampleRate'),
 			startupConnectivityTimeoutMs: pick('startupConnectivityTimeoutMs'),
 			includeNodeSpans: pick('includeNodeSpans'),
+			emitWorkflowStartSpan: pick('emitWorkflowStartSpan'),
+			emitNodeStartSpan: pick('emitNodeStartSpan'),
 			injectOutbound: pick('injectOutbound'),
 			productionExecutionsOnly: pick('productionExecutionsOnly'),
 		};

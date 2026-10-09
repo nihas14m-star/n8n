@@ -88,6 +88,8 @@ describe('OtelSettingsService', () => {
 				tracesSampleRate: 1.0,
 				startupConnectivityTimeoutMs: 2_000,
 				includeNodeSpans: true,
+				emitWorkflowStartSpan: false,
+				emitNodeStartSpan: false,
 				injectOutbound: true,
 				productionExecutionsOnly: true,
 				envManagedFields: [],
@@ -308,6 +310,8 @@ describe('OtelSettingsService', () => {
 			tracesSampleRate: 0.7,
 			startupConnectivityTimeoutMs: 5_000,
 			includeNodeSpans: false,
+			emitWorkflowStartSpan: false,
+			emitNodeStartSpan: false,
 			injectOutbound: true,
 			productionExecutionsOnly: false,
 		};
@@ -374,6 +378,46 @@ describe('OtelSettingsService', () => {
 			) as OtelConfig;
 			// 'a' keeps its stored value, 'b' is dropped (absent), 'c' is new
 			expect(saved.exporterHeaders).toBe('a=1,c=3');
+		});
+
+		it('keeps the stored start span flags when the request omits them', async () => {
+			settingsRepository.findByKey.mockResolvedValue({
+				value: JSON.stringify({
+					...settings,
+					emitWorkflowStartSpan: true,
+					emitNodeStartSpan: true,
+				}),
+			} as Settings);
+			const {
+				emitWorkflowStartSpan: _workflow,
+				emitNodeStartSpan: _node,
+				...withoutFlags
+			} = settings;
+
+			await service.saveSettings(withoutFlags);
+
+			const saved = JSON.parse(
+				(settingsRepository.save.mock.calls[0]?.[0] as { value: string }).value,
+			) as OtelConfig;
+			expect(saved.emitWorkflowStartSpan).toBe(true);
+			expect(saved.emitNodeStartSpan).toBe(true);
+		});
+
+		it('uses the default start span flags when the request omits them and none are stored', async () => {
+			settingsRepository.findByKey.mockResolvedValue(null);
+			const {
+				emitWorkflowStartSpan: _workflow,
+				emitNodeStartSpan: _node,
+				...withoutFlags
+			} = settings;
+
+			await service.saveSettings(withoutFlags);
+
+			const saved = JSON.parse(
+				(settingsRepository.save.mock.calls[0]?.[0] as { value: string }).value,
+			) as OtelConfig;
+			expect(saved.emitWorkflowStartSpan).toBe(false);
+			expect(saved.emitNodeStartSpan).toBe(false);
 		});
 
 		it('drops a blanked pair whose key has no stored value', async () => {
