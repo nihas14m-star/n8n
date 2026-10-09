@@ -197,7 +197,6 @@ describe('AgentChatController route access scopes', () => {
 		['stopBackgroundJobs', 'agent:execute'],
 		['cancelTasks', 'agent:execute'],
 		['getTaskCancellation', 'agent:execute'],
-		['sendHeldMessage', 'agent:execute'],
 		['getTestChatMessages', 'agent:read'],
 		['clearTestChatMessages', 'agent:update'],
 	])('%s uses %s', (handlerName, scope) => {
@@ -1445,20 +1444,5 @@ describe('AgentChatController task cancellation', () => {
 		);
 		expect(taskCancellation.request).not.toHaveBeenCalled();
 		expect(taskCancellation.state).not.toHaveBeenCalled();
-	});
-
-	it('sends only the selected held entry in Preview', async () => {
-		const { controller, agentsService, messageQueue } = makeController();
-		agentsService.findById.mockResolvedValue({ id: 'agent' } as never);
-		await controller.sendHeldMessage({
-			...request,
-			params: { ...request.params, queueId: '1' },
-		} as never);
-		expect(messageQueue.sendHeld).toHaveBeenCalledWith({
-			...request.params,
-			queueId: '1',
-			userId: 'user',
-			kind: 'preview',
-		});
 	});
 });

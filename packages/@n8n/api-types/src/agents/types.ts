@@ -392,7 +392,6 @@ export interface AgentBuilderOpenSuspension {
 }
 
 export interface AgentChatQueueItem {
-	held?: boolean;
 	id: string;
 	steeringExecutionId: string | null;
 	message: string;
