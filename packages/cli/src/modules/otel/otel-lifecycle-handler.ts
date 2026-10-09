@@ -108,6 +108,11 @@ export class OtelLifecycleHandler {
 			executionId: ctx.executionId,
 			tracingContext,
 			savedIdentity,
+			// Only the engine's own call carries a workflow instance. Queue-mode main and the failure
+			// recorder do not, so each segment gets one marker, from where the engine runs it.
+			emitStartSpan:
+				this.otelSettingsService.getSettings().emitWorkflowStartSpan &&
+				ctx.workflowInstance !== undefined,
 			project: this.buildProjectContext(project),
 			workflow: {
 				id: ctx.workflow.id,
@@ -151,6 +156,7 @@ export class OtelLifecycleHandler {
 			tracingContext: previousWorkflowExecution,
 			linkTo: previousWorkflowExecution,
 			savedIdentity: toExecutionIdentity(previousWorkflowExecution?.identity),
+			emitStartSpan: this.otelSettingsService.getSettings().emitWorkflowStartSpan,
 			project: this.buildProjectContext(project),
 			workflow: {
 				id: ctx.workflow.id,
@@ -214,6 +220,7 @@ export class OtelLifecycleHandler {
 		this.tracer.startNode({
 			executionId: ctx.executionId,
 			node,
+			emitStartSpan: this.otelSettingsService.getSettings().emitNodeStartSpan,
 		});
 	}
 
